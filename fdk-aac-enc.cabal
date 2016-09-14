@@ -1,0 +1,27 @@
+name:                fdk-aac-enc
+version:             0.1.0.0
+synopsis:            ISO-14496-3 AAC Encoding
+description:         Please see README.md
+homepage:            https://github.com/githubuser/fdk-aac-enc#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Sven Heyll, Lindenbaum GmbH
+maintainer:          example@example.com
+copyright:           2016 Lindenbaum GmbH
+category:            Sound
+build-type:          Simple
+cabal-version:       >=1.10
+
+executable fdk-aac-enc
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  build-depends:       base >= 4.9 && < 5
+                     , inline-c >= 0.5.5 && < 0.5.6
+                     , bytestring >= 0.10.8 && < 0.11
+  c-sources:           src/Main.c
+  -- These flags will be passed to the C compiler
+  cc-options:          -Wall -O2
+  -- Libraries to link the code with.
+  extra-libraries:     m
+  PkgConfig-Depends:   fdk-aac >= 0.1.4
