@@ -13,6 +13,6 @@ C.include "fdk-aac/aacenc_lib.h"
 main :: IO ()
 main = do
   x <- [C.block| int {
-
+         return 0;
        } |]
   print x
