@@ -1,12 +1,14 @@
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TemplateHaskell #-}
-module Audio.FdkAac (aacEncOpen, aacEncClose, AacEncoderHandle, module X) where
+module Audio.FdkAac
+  (aacEncoderNew, aacEncoderClose, AacEncoderHandle(..) -- TODO remove (..)
+  , module X)
+  where
 
 -- import qualified Data.ByteString               as BS
 import           Data.ByteString.Mp4.AudioFile as X
-import           Data.ByteString.IsoBaseFileFormat.Util.Time as X
-import           Data.Type.BitRecords as X
+
+
 import           Foreign.C.Types
+-- -- import           Foreign.Marshal.Alloc
 import qualified Language.C.Inline             as C
 -- import qualified Language.C.Types              as C
 -- import qualified Language.C.Types.Parse        as C
@@ -20,8 +22,8 @@ C.include "fdk-aac/aacenc_lib.h"
 
 newtype AacEncoderHandle = MkAacEncoderHandle CUIntPtr
 
-aacEncOpen :: AacMp4StreamConfig -> IO (Maybe AacEncoderHandle)
-aacEncOpen AacMp4StreamConfig{..} =
+aacEncoderNew :: AacMp4StreamConfig -> IO (Maybe AacEncoderHandle)
+aacEncoderNew AacMp4StreamConfig{..} =
   let
     modules, channels, aot, sampleRate', bitRate, sbrMode, signallingMode, channelMode :: CUInt
     !modules = if useHeAac then 3 else 1 -- TODO parametric stereo
@@ -125,22 +127,14 @@ aacEncOpen AacMp4StreamConfig{..} =
 
     e0:
        printf("FDK-AAC encoder error: %d\n", e);
-       return NULL;
+       return (uintptr_t)NULL;
   } |] >>= (\ hPtr -> if hPtr == 0 then return Nothing else return (Just (MkAacEncoderHandle hPtr)))
 
-aacEncClose :: AacEncoderHandle -> IO Bool
-aacEncClose (MkAacEncoderHandle !hPtr) =
+aacEncoderClose :: AacEncoderHandle -> IO Bool
+aacEncoderClose (MkAacEncoderHandle !hPtr) =
     [C.block| int {
        AACENC_ERROR e;
        HANDLE_AACENCODER phAacEncoder = (HANDLE_AACENCODER) $(uintptr_t hPtr);
-       return aacEncClose(&phAacEncoder));
+       return aacEncClose(&phAacEncoder);
     } |]
     >>= return . (== 0)
-
-
--- | Take a 'Modulo' buffer and consume some data from it. If an output frame was
--- generated return it together with the updated module buffer.
--- aacEncodePcm
---   :: AacEncoderHandle
---   -> ModuloBuffer Pcm
---   -> (AacEncOutArgs -> IO a) -> IO (Either FdkAacError a)

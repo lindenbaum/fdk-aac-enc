@@ -5,7 +5,6 @@ packages:
 - '../isobmff-builder'
 - '../type-spec'
 - '../pretty-types'
-- '../conduit-network-rtp'
 
 extra-deps: []
 
