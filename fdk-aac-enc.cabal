@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Audio.FdkAac
-                     , Audio.AacOut
+                     , Audio.AacOutputStream
   default-language:    Haskell2010
   default-extensions:  BangPatterns
                      , ConstraintKinds
