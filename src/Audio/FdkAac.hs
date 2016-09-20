@@ -1,9 +1,8 @@
 module Audio.FdkAac
-  (aacEncoderNew, aacEncoderEncode, aacEncoderClose, AacEncoderHandle(..) -- TODO remove (..)
-  , module X)
+  (aacEncoderNew, aacEncoderEncode, aacEncoderClose, AacEncoderHandle)
   where
 
-import           Data.ByteString.Mp4.AudioStreaming as X
+import           Data.ByteString.Mp4.AudioStreaming
 import           Control.Monad (when)
 import           Foreign.C.Types
 import qualified Language.C.Inline                  as C

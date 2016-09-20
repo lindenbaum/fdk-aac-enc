@@ -1,17 +1,28 @@
-module Audio.AacOut  where
+module Audio.AacOutputStream
+  ( StreamId(..)
+  , type SegmentHandler
+  , Segment(..)
+  , InitSegment(..)
+  , Context()
+  , streamOpen
+  , streamEncodePcm
+  , streamClose
+  ) where
 
-import qualified Language.C.Inline            as C
+import qualified Data.ByteString.Mp4.AudioStreaming as Mp4
 import           Audio.FdkAac
+import qualified Language.C.Inline            as C
 import qualified Data.Vector.Storable         as V
 import qualified Data.Vector.Storable.Mutable as VM
 import Data.Coerce
-import Control.Monad (when)
+import Data.Word
+import Data.Int
 import Control.Monad.IO.Class
 import Data.Vector.Storable.ByteString
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Builder as BB
-
+import Text.Printf
 
 -- data TalkFlowServerContext =
 --   TalkFlowServerContext
@@ -21,91 +32,91 @@ import qualified Data.ByteString.Builder as BB
 
 -- data DashStreams =
 --    DashStreams
---      { streamInitSegment     :: TVar (Map.Map AacOutStreamId BS.ByteString)
---      , streamAudioSegments   :: TVar (Map.Map AacOutStreamId (Set.Set (Word32, BS.ByteString))
---      , streamManifests       :: TVar (Map.Map AacOutStreamId BS.ByteString)
---      , streamCurrentSegments :: TVar (Map.Map AacOutStreamId Word32)
+--      { streamInitSegment     :: TVar (Map.Map StreamId BS.ByteString)
+--      , streamAudioSegments   :: TVar (Map.Map StreamId (Set.Set (Word32, BS.ByteString))
+--      , streamManifests       :: TVar (Map.Map StreamId BS.ByteString)
+--      , streamCurrentSegments :: TVar (Map.Map StreamId Word32)
 --      }
 
-newtype AacOutStreamId = AacOutStreamId {unAacOutStreamId :: Word64}
+newtype StreamId = StreamId {unStreamId :: Word64}
   deriving (Integral,Num,Eq,Ord,Show,Enum,Real)
 
-type AacOutStreamSegmentHandler m = (AacOutStreamSegment -> m ())
+type SegmentHandler m = (Segment -> m ())
 
-data AacOutStreamSegment =
-  AacOutStreamSegment
+data Segment =
+  Segment
   { aosSegmentSequence :: !Word32
   , aosSegmentTime     :: !Word32
   , aosSegmentData     :: !BS.ByteString
   }
 
-instance Show AacOutStreamSegment where
-  show (AacOutStreamSegment !s !t !d) =
-    printf "seq: %14d - time: %14d - size: %14d\n" s t (BS.length d)
+instance Show Segment where
+  show (Segment !s !t !d) =
+    printf "seq: %14d - time: %14d - size: %14d" s t (BS.length d)
 
-mkAacOutStreamSegment :: BS.ByteString -> StreamingContext -> AacOutStreamSegment
-mkAacOutStreamSegment !b !sc =
-  let !acDT = getStreamBaseTime sc
-      !acSeq = getStreamSequence sc
-  in AacOutStreamSegment acSeq acDT b
+mkSegment :: BS.ByteString -> Mp4.StreamingContext -> Segment
+mkSegment !b !sc =
+  let !acDT = Mp4.getStreamBaseTime sc
+      !acSeq = Mp4.getStreamSequence sc
+  in Segment acSeq acDT b
 
-newtype AacOutStreamInitSegment =
-  AacOutStreamInitSegment
-  { fromAacOutStreamInitSegment :: BS.ByteString }
+newtype InitSegment =
+  InitSegment
+  { fromInitSegment :: BS.ByteString }
 
-instance Show AacOutStreamInitSegment where
-  show (AacOutStreamInitSegment !d) =
-    printf "* INIT SEGMENT - size: %14d\n" (BS.length d)
+instance Show InitSegment where
+  show (InitSegment !d) =
+    printf "* INIT SEGMENT - size: %14d" (BS.length d)
 
-data AacOutStreamContext =
-  AacOutStreamContext
+data Context =
+  Context
     { faHandle   :: !AacEncoderHandle
     , faOutVec   :: !(VM.IOVector C.CUChar)
-    , faStream   :: !StreamingContext
-    , faId       :: !AacOutStreamId
+    , faStream   :: !Mp4.StreamingContext
+    , faId       :: !StreamId
     --    , faCache    :: !DashStreamCache
     }
 
-aacOutStreamOpen :: AacOutStreamId -> IO (Maybe (AacOutStreamInitSegment, AacOutStreamContext))
-aacOutStreamOpen sId = do
-  (initBuilder, st) <- streamInit (printf "TalkFlow:%0.16X" (unAacOutStreamId sId))
-                                  500
-                                  False
-                                  SF16000
-                                  SingleChannel
-  aacEncoderNew (getStreamConfig st) >>= mapM (onEncoderStarted initBuilder st)
+streamOpen :: StreamId -> IO (Maybe (InitSegment, Context))
+streamOpen sId = do
+  (initBuilder, st) <- Mp4.streamInit (printf "TalkFlow:%0.16X" (unStreamId sId))
+                                      500
+                                      False
+                                      Mp4.SF16000
+                                      Mp4.SingleChannel
+  aacEncoderNew (Mp4.getStreamConfig st) >>= mapM (onEncoderStarted initBuilder st)
   where
     onEncoderStarted initBuilder st h = do
       o <- VM.new 768
-      let !i = AacOutStreamInitSegment (BL.toStrict (BB.toLazyByteString initBuilder))
-      return (i, AacOutStreamContext h o st sId)
+      let !i = InitSegment (BL.toStrict (BB.toLazyByteString initBuilder))
+      return (i, Context h o st sId)
 
-aacOutStreamClose :: AacOutStreamContext -> IO (Maybe AacOutStreamSegment)
-aacOutStreamClose AacOutStreamContext{..} = do
+streamClose :: Context -> IO (Maybe Segment)
+streamClose Context{..} = do
     aacEncoderClose faHandle  -- TODO error handling
-    let (!msegment, faStream') = streamFlush faStream
+    let (!msegment, faStream') = Mp4.streamFlush faStream
     case msegment of
       Just segment -> do
         let strictSeg = BL.toStrict (BB.toLazyByteString segment)
         printf "Got a last segment with %d bytes\n" (BS.length strictSeg)
-        return (Just (mkAacOutStreamSegment strictSeg faStream'))
+        return (Just (mkSegment strictSeg faStream'))
       Nothing ->
         return Nothing
 
-aacOutStreamEncodePcm
+streamEncodePcm
   :: forall m . MonadIO m
   => V.Vector Int16
-  -> AacOutStreamSegmentHandler m
-  -> AacOutStreamContext
-  -> m (Maybe AacOutStreamContext)
-aacOutStreamEncodePcm !inVecFrozen !callback !ctxIn =
+  -> SegmentHandler m
+  -> Context
+  -> m (Maybe Context)
+streamEncodePcm !inVecFrozen !callback !ctxIn =
   liftIO (V.thaw (coerce inVecFrozen)) >>= go ctxIn
   where
-    go :: AacOutStreamContext -> VM.IOVector C.CShort -> m (Maybe AacOutStreamContext)
-    go !ctx@AacOutStreamContext{..} !inVec =
+    go :: Context -> VM.IOVector C.CShort -> m (Maybe Context)
+    go !ctx@Context{..} !inVec =
       do (!ok, !consumedSamples, !inVec', !outVec') <- liftIO $ aacEncoderEncode faHandle inVec faOutVec
          if not ok
-           then do liftIO $ printf "\n\n\n*** Encoder error in stream: %16X\n\n\n" (unAacOutStreamId faId)
+           then do liftIO $ printf "\n\n\n*** Encoder error in stream: %16X\n\n\n" (unStreamId faId)
                    -- TODO error handling
                    return Nothing
            else do
@@ -116,11 +127,11 @@ aacOutStreamEncodePcm !inVecFrozen !callback !ctxIn =
                  Just vo -> do
                    vo' <- liftIO $ V.freeze vo
                    let !voBS = vectorToByteString vo'
-                       (!msegment, !faStream') = streamNextSample consumedSamples voBS faStream
+                       (!msegment, !faStream') = Mp4.streamNextSample consumedSamples voBS faStream
                    case msegment of
                      Just !segment -> do
                        let !strictSeg = BL.toStrict (BB.toLazyByteString segment)
-                       callback (mkAacOutStreamSegment strictSeg faStream')
+                       callback (mkSegment strictSeg faStream')
                      Nothing ->
                        return ()
                    return faStream'
@@ -131,28 +142,22 @@ aacOutStreamEncodePcm !inVecFrozen !callback !ctxIn =
                Just !inVecRest -> do  -- Still input
                  go nextCtx inVecRest
 
-
+lilltest2 :: IO ()
 lilltest2 = do
-    Just (initseg, ctx) <- aacOutStreamOpen 123
+    Just (initseg, ctx) <- streamOpen 123
     print initseg
     let vin = V.fromList [0..1023]
         vin :: V.Vector Int16
     ctx' <- go (10000 :: Word32) ctx vin
-    o <- aacOutStreamClose ctx'
+    o <- streamClose ctx'
     case o of
       Just lastSegm -> print lastSegm
       Nothing -> return ()
   where
     go 0 ac _vin = return ac
     go n ac vin = do
-      Just ac' <- aacOutStreamEncodePcm vin print ac
+      Just ac' <- streamEncodePcm vin print ac
       go (n-1) ac' vin
-
-printHexList :: forall a . (VM.Storable a, Integral a) => VM.IOVector a -> IO ()
-printHexList v = do
-  v' <- V.unsafeFreeze v
-  putStrLn (unwords (printf "%x" . fromIntegral @a @Int <$> V.toList v'))
-
 
 
 {-
@@ -203,7 +208,7 @@ Overall architecture:
 data ServerCtx =
   MkServerCtx {
     rtpPorts :: TVar (Set.Set Int)
-    streams :: TVar (Map.Map AacOutStreamId StreamCtx)
+    streams :: TVar (Map.Map StreamId StreamCtx)
   }
 
 server serverConfig = do
