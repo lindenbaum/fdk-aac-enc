@@ -27,46 +27,20 @@ import Text.Printf
 newtype StreamId = StreamId {unStreamId :: Word64}
   deriving (Integral,Num,Eq,Ord,Show,Enum,Real)
 
-type SegmentHandler m = (Segment -> m ())
-
-data Segment =
-  Segment
-  { aosSegmentSequence :: !Word32
-  , aosSegmentTime     :: !Word32
-  , aosSegmentData     :: !BS.ByteString
-  }
-
-instance Show Segment where
-  show (Segment !s !t !d) =
-    printf "seq: %14d - time: %14d - size: %14d" s t (BS.length d)
-
-mkSegment :: BS.ByteString -> Mp4.StreamingContext -> Segment
-mkSegment !b !sc =
-  let !acDT = Mp4.getStreamBaseTime sc
-      !acSeq = Mp4.getStreamSequence sc
-  in Segment acSeq acDT b
-
-newtype InitSegment =
-  InitSegment
-  { fromInitSegment :: BS.ByteString }
-
-instance Show InitSegment where
-  show (InitSegment !d) =
-    printf "* INIT SEGMENT - size: %14d" (BS.length d)
-
 data Context =
   Context
-    { faHandle   :: !AacEncoderHandle
-    , faOutVec   :: !(VM.IOVector C.CUChar)
-    , faStream   :: !Mp4.StreamingContext
-    , faId       :: !StreamId
+    { faHandle          :: !AacEncoderHandle
+    , faOutVec          :: !(VM.IOVector C.CUChar)
+    , faStream          :: !Mp4.StreamingContext
+    , faId              :: !StreamId
+    , faSegmentDuration :: !Word32
     --    , faCache    :: !DashStreamCache
     }
 
-streamOpen :: StreamId -> IO (Maybe (InitSegment, Context))
-streamOpen sId = do
+streamOpen :: StreamId -> Word32 -> IO (Maybe (InitSegment, Context))
+streamOpen sId segmentDurationMillis = do
   (initBuilder, st) <- Mp4.streamInit (printf "TalkFlow:%0.16X" (unStreamId sId))
-                                      500
+                                      segmentDurationMillis
                                       False
                                       Mp4.SF16000
                                       Mp4.SingleChannel
@@ -75,7 +49,7 @@ streamOpen sId = do
     onEncoderStarted initBuilder st h = do
       o <- VM.new 768
       let !i = InitSegment (BL.toStrict (BB.toLazyByteString initBuilder))
-      return (i, Context h o st sId)
+      return (i, Context h o st sId segmentDurationMillis)
 
 streamClose :: Context -> IO (Maybe Segment)
 streamClose Context{..} = do
@@ -127,3 +101,31 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
                  return (Just nextCtx)
                Just !inVecRest -> do  -- Still input
                  go nextCtx inVecRest
+
+type SegmentHandler m = (Segment -> m ())
+
+data Segment =
+  Segment
+  { segmentSequence :: !Word32
+  , segmentTime     :: !Word32
+  , segmentData     :: !BS.ByteString
+  }
+
+newtype InitSegment =
+  InitSegment
+  { fromInitSegment :: BS.ByteString }
+
+instance Show InitSegment where
+  show (InitSegment !d) =
+    printf "* INIT SEGMENT - size: %14d" (BS.length d)
+
+
+instance Show Segment where
+  show (Segment !s !t !d) =
+    printf "seq: %14d - time: %14d - size: %14d" s t (BS.length d)
+
+mkSegment :: BS.ByteString -> Mp4.StreamingContext -> Segment
+mkSegment !b !sc =
+  let !acDT = Mp4.getStreamBaseTime sc
+      !acSeq = Mp4.getStreamSequence sc
+  in Segment acSeq acDT b
