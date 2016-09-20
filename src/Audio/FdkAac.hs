@@ -1,27 +1,24 @@
 module Audio.FdkAac
-  (aacEncoderNew, aacEncoderClose, AacEncoderHandle(..) -- TODO remove (..)
+  (aacEncoderNew, aacEncoderEncode, aacEncoderClose, AacEncoderHandle(..) -- TODO remove (..)
   , module X)
   where
 
--- import qualified Data.ByteString               as BS
-import           Data.ByteString.Mp4.AudioFile as X
-
-
+import           Data.ByteString.Mp4.AudioStreaming as X
+import           Control.Monad (when)
 import           Foreign.C.Types
--- -- import           Foreign.Marshal.Alloc
-import qualified Language.C.Inline             as C
--- import qualified Language.C.Types              as C
--- import qualified Language.C.Types.Parse        as C
--- import qualified Data.Vector.Storable as V
--- import qualified Data.Vector.Storable.Mutable as VM
--- import           Data.Monoid
+import qualified Language.C.Inline                  as C
+import qualified Data.Vector.Storable.Mutable       as VM
+
+C.context (C.baseCtx <> C.vecCtx)
 
 C.include "<stdio.h>"
 C.include "<stdint.h>"
 C.include "fdk-aac/aacenc_lib.h"
 
+-- | Handle for a specific encoder, can be created with 'aacEncoderNew'.
 newtype AacEncoderHandle = MkAacEncoderHandle CUIntPtr
 
+-- | Allocate a FDK-AAC encoder.
 aacEncoderNew :: AacMp4StreamConfig -> IO (Maybe AacEncoderHandle)
 aacEncoderNew AacMp4StreamConfig{..} =
   let
@@ -51,7 +48,6 @@ aacEncoderNew AacMp4StreamConfig{..} =
       SinglePairPair -> 5
       SinglePairPairLfe -> 6
       SinglePairPairPairLfe -> 7
-
   in
   [C.block| uintptr_t {
     AACENC_ERROR e;
@@ -130,11 +126,88 @@ aacEncoderNew AacMp4StreamConfig{..} =
        return (uintptr_t)NULL;
   } |] >>= (\ hPtr -> if hPtr == 0 then return Nothing else return (Just (MkAacEncoderHandle hPtr)))
 
-aacEncoderClose :: AacEncoderHandle -> IO Bool
-aacEncoderClose (MkAacEncoderHandle !hPtr) =
-    [C.block| int {
-       AACENC_ERROR e;
-       HANDLE_AACENCODER phAacEncoder = (HANDLE_AACENCODER) $(uintptr_t hPtr);
-       return aacEncClose(&phAacEncoder);
-    } |]
-    >>= return . (== 0)
+
+-- | Encode mutable IO vectors.
+aacEncoderEncode
+  :: AacEncoderHandle
+  -> VM.IOVector C.CShort
+  -> VM.IOVector C.CUChar
+  -> IO (Bool, Word32, Maybe (VM.IOVector C.CShort), Maybe (VM.IOVector C.CUChar))
+aacEncoderEncode (MkAacEncoderHandle !h) !vec !bso = do
+  ((numOutBytes, numInSamples, numAncBytes), retCode)
+     <- C.withPtrs $
+       \ (numOutBytesP, numInSamplesP, numAncBytesP) ->
+         [C.block| int {
+            AACENC_ERROR e;
+            HANDLE_AACENCODER phAacEncoder = (HANDLE_AACENCODER) $(uintptr_t h);
+
+            /* Input buffer */
+            AACENC_BufDesc inBuffDesc;
+            INT inBuffIds[1]             = {IN_AUDIO_DATA};
+            INT inBuffSizes[1]           = {$vec-len:vec * 2};
+            INT inBuffElSizes[1]         = {2};
+            void* inBuffBuffers[1]       = {$vec-ptr:(short *vec)};
+            inBuffDesc.numBufs           = 1;
+            inBuffDesc.bufs              = &inBuffBuffers;
+            inBuffDesc.bufferIdentifiers = &inBuffIds;
+            inBuffDesc.bufSizes          = &inBuffSizes;
+            inBuffDesc.bufElSizes        = &inBuffElSizes;
+            AACENC_InArgs inArgs         = { .numInSamples = $vec-len:vec, .numAncBytes = 0 };
+
+            /* Ouput buffer */
+            AACENC_BufDesc outBuffDesc;
+            INT outBuffIds[1]             = {OUT_BITSTREAM_DATA};
+            INT outBuffSizes[1]           = {$vec-len:bso};
+            INT outBuffElSizes[1]         = {1};
+            void* outBuffBuffers[1]       = {$vec-ptr:(unsigned char *bso)};
+            outBuffDesc.numBufs           = 1;
+            outBuffDesc.bufs              = &outBuffBuffers;
+            outBuffDesc.bufferIdentifiers = &outBuffIds;
+            outBuffDesc.bufSizes          = &outBuffSizes;
+            outBuffDesc.bufElSizes        = &outBuffElSizes;
+            AACENC_OutArgs outArgs;
+
+            e = aacEncEncode (phAacEncoder, &inBuffDesc, &outBuffDesc,
+                              &inArgs, &outArgs);
+
+            *($(int* numOutBytesP)) = outArgs.numOutBytes;
+            *($(int* numInSamplesP)) = outArgs.numInSamples;
+            *($(int* numAncBytesP)) = outArgs.numAncBytes;
+
+            return e;
+         }|]
+  when (retCode /= 0) $ do
+     printf "\n\nEncoding Error Report\n"
+     printf "=====================\n"
+     printf "- exit code:    %8d\n"   $ fromIntegral @C.CInt @Int retCode
+     printf "- numOutBytes:  %8d\n"   $ fromIntegral @C.CInt @Int numOutBytes
+     printf "- numInSamples: %8d\n"   $ fromIntegral @C.CInt @Int numInSamples
+     printf "- numAncBytes:  %8d\n\n" $ fromIntegral @C.CInt @Int numAncBytes
+  let !numInSamplesI = fromIntegral @C.CInt @Int numInSamples
+  !mRetInBuf <-
+      if (numInSamplesI >= VM.length vec) then return Nothing
+      else
+       do let !inSliceLen = VM.length vec - numInSamplesI -- TODO what about stereo!?
+              !inSlice    = VM.slice numInSamplesI inSliceLen vec
+          printf "OPTIMIZE-ME: consumed only %d of %d input samples, returning input slice of size %d.\n"
+                 numInSamplesI (VM.length vec) inSliceLen
+          return (Just inSlice)
+  let !numOutBytesI = fromIntegral @C.CInt @Int numOutBytes
+      !mRetOutBuf   = if (numOutBytesI == 0)
+                      then Nothing
+                      else Just  (VM.slice 0 numOutBytesI bso)
+  return (retCode == 0, fromIntegral numInSamplesI, mRetInBuf, mRetOutBuf)
+
+-- TODO FLUSH!!!!!!!!!!!!!!!!!!!!!!
+
+
+-- | Close an FDK-AAC encoder.
+aacEncoderClose :: AacEncoderHandle -> IO ()
+aacEncoderClose (MkAacEncoderHandle !hPtr) = do
+   res <- [C.block| int {
+             AACENC_ERROR e;
+             HANDLE_AACENCODER phAacEncoder = (HANDLE_AACENCODER) $(uintptr_t hPtr);
+             return aacEncClose(&phAacEncoder);
+          } |]
+   when (res /= 0)
+     (putStrLn "\n\n\n*** ERROR: Failed to close FDK AAC Encoder! *** \n\n\n")
