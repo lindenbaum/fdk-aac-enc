@@ -16,6 +16,7 @@ import qualified Data.Vector.Storable         as V
 import qualified Data.Vector.Storable.Mutable as VM
 import Data.Coerce
 import Data.Word
+import Data.Maybe (isJust)
 import Data.Int
 import Control.Monad.IO.Class
 import Data.Vector.Storable.ByteString
@@ -34,6 +35,7 @@ data Context =
     , faStream          :: !Mp4.StreamingContext
     , faId              :: !StreamId
     , faSegmentDuration :: !Word32
+    , faConsumedButUnencodedSampleCount :: !Word32
     --    , faCache    :: !DashStreamCache
     }
 
@@ -49,7 +51,7 @@ streamOpen sId segmentDurationMillis = do
     onEncoderStarted initBuilder st h = do
       o <- VM.new 768
       let !i = InitSegment (BL.toStrict (BB.toLazyByteString initBuilder))
-      return (i, Context h o st sId segmentDurationMillis)
+      return (i, Context h o st sId segmentDurationMillis 0)
 
 streamClose :: Context -> IO (Maybe Segment)
 streamClose Context{..} = do
@@ -74,12 +76,14 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
   where
     go :: Context -> VM.IOVector C.CShort -> m (Maybe Context)
     go !ctx@Context{..} !inVec =
-      do (!ok, !consumedSamples, !inVec', !outVec') <- liftIO $ aacEncoderEncode faHandle inVec faOutVec
+      do (!ok, !cons, !inVec', !outVec')
+            <- liftIO $ aacEncoderEncode faHandle inVec faOutVec
          if not ok
            then do liftIO $ printf "\n\n\n*** Encoder error in stream: %16X\n\n\n" (unStreamId faId)
                    -- TODO error handling
                    return Nothing
            else do
+             let !totalConsumed = faConsumedButUnencodedSampleCount + cons
              nextFaStream <-
                case outVec' of
                  Nothing ->
@@ -87,7 +91,7 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
                  Just vo -> do
                    vo' <- liftIO $ V.freeze vo
                    let !voBS = vectorToByteString vo'
-                       (!msegment, !faStream') = Mp4.streamNextSample consumedSamples voBS faStream
+                       (!msegment, !faStream') = Mp4.streamNextSample totalConsumed voBS faStream
                    case msegment of
                      Just !segment -> do
                        let !strictSeg = BL.toStrict (BB.toLazyByteString segment)
@@ -95,7 +99,9 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
                      Nothing ->
                        return ()
                    return faStream'
-             let !nextCtx = ctx { faStream = nextFaStream }
+             let !nextCtx = ctx { faStream = nextFaStream
+                                , faConsumedButUnencodedSampleCount =
+                                  if isJust outVec' then 0 else totalConsumed }
              case inVec' of
                Nothing -> do -- Input consumed, done here
                  return (Just nextCtx)
