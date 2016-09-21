@@ -26,19 +26,6 @@ import qualified Data.ByteString.Builder as BB
 import Text.Printf
 import           Data.Time.Clock               (UTCTime)
 
-newtype StreamId = StreamId {unStreamId :: Word64}
-  deriving (Integral,Num,Eq,Ord,Show,Enum,Real)
-
-data Context =
-  Context
-    { faHandle                          :: !AacEncoderHandle
-    , faOutVec                          :: !(VM.IOVector C.CUChar)
-    , faStream                          :: !Mp4.StreamingContext
-    , faId                              :: !StreamId
-    , faSegmentDuration                 :: !Word32
-    , faConsumedButUnencodedSampleCount :: !Word32
-    }
-
 streamOpen
   :: MonadIO m
   => StreamId -> UTCTime -> Word32 -> m (Maybe (InitSegment, Context))
@@ -74,6 +61,30 @@ streamClose Context{..} = liftIO $ do
         return (Just (mkSegment strictSeg faStream'))
       Nothing ->
         return Nothing
+
+-- -- TODO fix this from the bottom up...
+-- streamResetAndEncode
+--   :: forall m . MonadIO m
+--   => NominalDiffTime
+--   -> V.Vector Int16
+--   -> SegmentHandler m
+--   -> Context
+--   -> m (Maybe Context)
+-- streamSkipAndEncode diffTime pcm callback c@Context{..} =
+--   do let (!msegment, faStreamFlushed) = Mp4.streamFlush faStream
+--      case msegment of
+--       Just segment -> do
+--         let strictSeg = BL.toStrict (BB.toLazyByteString segment)
+--         printf "streamResetAndEncode got segment with %d bytes\n" (BS.length strictSeg)
+--         callback (mkSegment strictSeg faStreamFlushed)
+--       Nothing ->
+--         return Nothing
+
+--      let faStreamAtNewStartTime =
+--            faStreamFlushed { acSequence = acSequenceNew
+--                            , acBaseTime = acBaseTimeNew }
+--          acSequenceNew = acSequence faStreamFlushed
+
 
 streamEncodePcm
   :: forall m . MonadIO m
@@ -122,6 +133,19 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
                  return (Just nextCtx)
                Just !inVecRest -> do  -- Still input
                  go nextCtx inVecRest
+
+newtype StreamId = StreamId {unStreamId :: Word64}
+  deriving (Integral,Num,Eq,Ord,Show,Enum,Real)
+
+data Context =
+  Context
+    { faHandle                          :: !AacEncoderHandle
+    , faOutVec                          :: !(VM.IOVector C.CUChar)
+    , faStream                          :: !Mp4.StreamingContext
+    , faId                              :: !StreamId
+    , faSegmentDuration                 :: !Word32
+    , faConsumedButUnencodedSampleCount :: !Word32
+    }
 
 type SegmentHandler m = (Segment -> m ())
 
