@@ -5,6 +5,7 @@ module Audio.AacOutputStream
   , InitSegment(..)
   , Context()
   , streamOpen
+  , streamIncreaseBaseTime
   , streamEncodePcm
   , streamClose
   ) where
@@ -18,6 +19,7 @@ import Data.Coerce
 import Data.Word
 import Data.Maybe (isJust)
 import Data.Int
+import Data.Time.Clock
 import Control.Monad.IO.Class
 import Data.Vector.Storable.ByteString
 import qualified Data.ByteString as BS
@@ -62,29 +64,22 @@ streamClose Context{..} = liftIO $ do
       Nothing ->
         return Nothing
 
--- -- TODO fix this from the bottom up...
--- streamResetAndEncode
---   :: forall m . MonadIO m
---   => NominalDiffTime
---   -> V.Vector Int16
---   -> SegmentHandler m
---   -> Context
---   -> m (Maybe Context)
--- streamSkipAndEncode diffTime pcm callback c@Context{..} =
---   do let (!msegment, faStreamFlushed) = Mp4.streamFlush faStream
---      case msegment of
---       Just segment -> do
---         let strictSeg = BL.toStrict (BB.toLazyByteString segment)
---         printf "streamResetAndEncode got segment with %d bytes\n" (BS.length strictSeg)
---         callback (mkSegment strictSeg faStreamFlushed)
---       Nothing ->
---         return Nothing
-
---      let faStreamAtNewStartTime =
---            faStreamFlushed { acSequence = acSequenceNew
---                            , acBaseTime = acBaseTimeNew }
---          acSequenceNew = acSequence faStreamFlushed
-
+-- TODO fix this from the bottom up...
+streamIncreaseBaseTime
+  :: forall m . MonadIO m
+  => NominalDiffTime
+  -> SegmentHandler m
+  -> Context
+  -> m Context
+streamIncreaseBaseTime diffTime callback c@Context{..} =
+  do let (!msegment, faStreamFlushed) = Mp4.streamFlush faStream
+     case msegment of
+      Just segment -> do
+        let strictSeg = BL.toStrict (BB.toLazyByteString segment)
+        callback (mkSegment strictSeg faStreamFlushed)
+      Nothing ->
+        return ()
+     return c { faStream = Mp4.addToBaseTime faStreamFlushed diffTime }
 
 streamEncodePcm
   :: forall m . MonadIO m

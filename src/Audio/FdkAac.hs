@@ -188,8 +188,6 @@ aacEncoderEncode (MkAacEncoderHandle !h) !vec !bso = do
       else
        do let !inSliceLen = VM.length vec - numInSamplesI -- TODO what about stereo!?
               !inSlice    = VM.slice numInSamplesI inSliceLen vec
-          printf "OPTIMIZE-ME: consumed only %d of %d input samples, returning input slice of size %d.\n"
-                 numInSamplesI (VM.length vec) inSliceLen
           return (Just inSlice)
   let !numOutBytesI = fromIntegral @C.CInt @Int numOutBytes
       !mRetOutBuf   = if (numOutBytesI == 0)
