@@ -4,7 +4,9 @@ packages:
 - '.'
 - '../isobmff-builder'
 
-extra-deps: []
+extra-deps:
+- pretty-types-0.2.3.1
+- type-spec-0.3.0.1
 
 flags: {}
 
