@@ -1,8 +1,7 @@
 module Audio.AacOutputStream
   ( StreamId(..)
   , type SegmentHandler
-  , Segment(..)
-  , InitSegment(..)
+  , module X
   , Context()
   , streamOpen
   , streamIncreaseBaseTime
@@ -11,6 +10,7 @@ module Audio.AacOutputStream
   ) where
 
 import qualified Data.ByteString.Mp4.AudioStreaming as Mp4
+import           Data.ByteString.Mp4.AudioStreaming as X (Segment(..), InitSegment(..))
 import           Audio.FdkAac
 import qualified Language.C.Inline            as C
 import qualified Data.Vector.Storable         as V
@@ -22,9 +22,6 @@ import Data.Int
 import Data.Time.Clock
 import Control.Monad.IO.Class
 import Data.Vector.Storable.ByteString
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Builder as BB
 import Text.Printf
 import           Data.Time.Clock               (UTCTime)
 
@@ -35,7 +32,7 @@ streamOpen sId availabilityStartTime segmentDurationMillis =
     liftIO lowLevelInit >>= mapM createContext
   where
     lowLevelInit = do
-      let (initBuilder, st) =
+      let (initSegment, st) =
             Mp4.streamInitUtc
             (printf "TalkFlow:%0.16X" (unStreamId sId))
             availabilityStartTime
@@ -43,24 +40,22 @@ streamOpen sId availabilityStartTime segmentDurationMillis =
             False
             Mp4.SF16000
             Mp4.SingleChannel
-      fmap (initBuilder, st, ) <$> aacEncoderNew (Mp4.getStreamConfig st)
+      fmap (initSegment, st, ) <$> aacEncoderNew (Mp4.getStreamConfig st)
 
-    createContext (initBuilder, st, h) = do
+    createContext (initSegment, st, h) = do
       o <- liftIO $ VM.new 768
-      let !i = InitSegment (BL.toStrict (BB.toLazyByteString initBuilder))
-      return (i, Context h o st sId segmentDurationMillis 0)
+      return (initSegment, Context h o st sId segmentDurationMillis 0)
 
 streamClose
   :: MonadIO m
   => Context -> m (Maybe Segment)
 streamClose Context{..} = liftIO $ do
     aacEncoderClose faHandle  -- TODO error handling
-    let (!msegment, faStream') = Mp4.streamFlush faStream
+    let (!msegment, _) = Mp4.streamFlush faStream
     case msegment of
       Just segment -> do
-        let strictSeg = BL.toStrict (BB.toLazyByteString segment)
-        printf "Got a last segment with %d bytes\n" (BS.length strictSeg)
-        return (Just (mkSegment strictSeg faStream'))
+        printf "Got a last segment: %s\n" (show segment)
+        return (Just segment)
       Nothing ->
         return Nothing
 
@@ -73,12 +68,7 @@ streamIncreaseBaseTime
   -> m Context
 streamIncreaseBaseTime diffTime callback c@Context{..} =
   do let (!msegment, faStreamFlushed) = Mp4.streamFlush faStream
-     case msegment of
-      Just segment -> do
-        let strictSeg = BL.toStrict (BB.toLazyByteString segment)
-        callback (mkSegment strictSeg faStreamFlushed)
-      Nothing ->
-        return ()
+     mapM_ callback msegment
      return c { faStream = Mp4.addToBaseTime faStreamFlushed diffTime }
 
 streamEncodePcm
@@ -111,12 +101,7 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
                        (!msegment, !faStream') = Mp4.streamNextSample totalConsumed
                                                                       voBS
                                                                       faStream
-                   case msegment of
-                     Just !segment -> do
-                       let !strictSeg = BL.toStrict (BB.toLazyByteString segment)
-                       callback (mkSegment strictSeg faStream')
-                     Nothing ->
-                       return ()
+                   mapM_ callback msegment
                    return faStream'
              let !nextCtx = ctx { faStream = nextFaStream
                                 , faConsumedButUnencodedSampleCount =
@@ -143,10 +128,3 @@ data Context =
     }
 
 type SegmentHandler m = (Segment -> m ())
-
-
-mkSegment :: BS.ByteString -> Mp4.StreamingContext -> Segment
-mkSegment !b !sc =
-  let !acDT = Mp4.getStreamBaseTime sc
-      !acSeq = Mp4.getStreamSequence sc
-  in Segment acSeq acDT b
