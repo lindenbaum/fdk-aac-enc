@@ -27,8 +27,8 @@ import           Data.Time.Clock               (UTCTime)
 
 streamOpen
   :: MonadIO m
-  => StreamId -> UTCTime -> Word32 -> m (Maybe (InitSegment, Context))
-streamOpen sId availabilityStartTime segmentDurationMillis =
+  => StreamId -> UTCTime -> NominalDiffTime -> m (Maybe (InitSegment, Context))
+streamOpen sId availabilityStartTime segmentDuration =
     liftIO lowLevelInit >>= mapM createContext
   where
     lowLevelInit = do
@@ -36,7 +36,7 @@ streamOpen sId availabilityStartTime segmentDurationMillis =
             Mp4.streamInitUtc
             (printf "TalkFlow:%0.16X" (unStreamId sId))
             availabilityStartTime
-            segmentDurationMillis
+            segmentDuration
             False
             Mp4.SF16000
             Mp4.SingleChannel
@@ -44,7 +44,7 @@ streamOpen sId availabilityStartTime segmentDurationMillis =
 
     createContext (initSegment, st, h) = do
       o <- liftIO $ VM.new 768
-      return (initSegment, Context h o st sId segmentDurationMillis 0)
+      return (initSegment, Context h o st sId segmentDuration 0)
 
 streamClose
   :: MonadIO m
@@ -114,8 +114,11 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
                Just !inVecRest -> do  -- Still input
                  go nextCtx inVecRest
 
-newtype StreamId = StreamId {unStreamId :: Word64}
-  deriving (Integral,Num,Eq,Ord,Show,Enum,Real)
+newtype StreamId = StreamId {unStreamId :: Word32}
+  deriving (Integral,Num,Eq,Ord,Enum,Real)
+
+instance Show StreamId where
+  show (StreamId s) = printf "stream: %0.8X" s
 
 data Context =
   Context
@@ -123,7 +126,7 @@ data Context =
     , faOutVec                          :: !(VM.IOVector C.CUChar)
     , faStream                          :: !Mp4.StreamingContext
     , faId                              :: !StreamId
-    , faSegmentDuration                 :: !Word32
+    , faSegmentDuration                 :: !NominalDiffTime
     , faConsumedButUnencodedSampleCount :: !Word32
     }
 
