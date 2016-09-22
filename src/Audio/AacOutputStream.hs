@@ -144,25 +144,6 @@ data Context =
 
 type SegmentHandler m = (Segment -> m ())
 
-data Segment =
-  Segment
-  { segmentSequence :: !Word32
-  , segmentTime     :: !Word32
-  , segmentData     :: !BS.ByteString
-  }
-
-newtype InitSegment =
-  InitSegment
-  { fromInitSegment :: BS.ByteString }
-
-instance Show InitSegment where
-  show (InitSegment !d) =
-    printf "INIT SEGMENT - size: %14d" (BS.length d)
-
-
-instance Show Segment where
-  show (Segment !s !t !d) =
-    printf "SEGMENT - seq: %14d - time: %14d - size: %14d" s t (BS.length d)
 
 mkSegment :: BS.ByteString -> Mp4.StreamingContext -> Segment
 mkSegment !b !sc =

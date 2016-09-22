@@ -17,6 +17,7 @@ library
   exposed-modules:     Audio.FdkAac
                      , Audio.AacOutputStream
   default-language:    Haskell2010
+  ghc-options:       -O2 -Wall -funbox-strict-fields -fno-warn-unused-do-bind -fprint-explicit-kinds
   default-extensions:  BangPatterns
                      , ConstraintKinds
                      , CPP
