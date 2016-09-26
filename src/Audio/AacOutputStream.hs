@@ -4,6 +4,7 @@ module Audio.AacOutputStream
   , module X
   , Context()
   , streamOpen
+  , streamOpen16kMono
   , streamIncreaseBaseTime
   , streamEncodePcm
   , streamClose
@@ -38,6 +39,27 @@ streamOpen sId availabilityStartTime segmentDuration =
             availabilityStartTime
             segmentDuration
             False
+            Mp4.SF48000
+            Mp4.ChannelPair
+      fmap (initSegment, st, ) <$> aacEncoderNew (Mp4.getStreamConfig st)
+
+    createContext (initSegment, st, h) = do
+      o <- liftIO $ VM.new 768
+      return (initSegment, Context h o st sId segmentDuration 0)
+
+streamOpen16kMono
+  :: MonadIO m
+  => StreamId -> UTCTime -> NominalDiffTime -> m (Maybe (InitSegment, Context))
+streamOpen16kMono sId availabilityStartTime segmentDuration =
+    liftIO lowLevelInit >>= mapM createContext
+  where
+    lowLevelInit = do
+      let (initSegment, st) =
+            Mp4.streamInitUtc
+            (printf "TalkFlow:%0.16X" (unStreamId sId))
+            availabilityStartTime
+            segmentDuration
+            False
             Mp4.SF16000
             Mp4.SingleChannel
       fmap (initSegment, st, ) <$> aacEncoderNew (Mp4.getStreamConfig st)
@@ -45,6 +67,7 @@ streamOpen sId availabilityStartTime segmentDuration =
     createContext (initSegment, st, h) = do
       o <- liftIO $ VM.new 768
       return (initSegment, Context h o st sId segmentDuration 0)
+
 
 streamClose
   :: MonadIO m
