@@ -24,7 +24,7 @@ aacEncoderNew AacMp4StreamConfig{..} =
     modules, channels, aot, sampleRate', bitRate, sbrMode, signallingMode, channelMode :: CUInt
     !modules = if useHeAac then 3 else 1 -- TODO parametric stereo
     !channels = case channelConfig of
-      GasChannelConfig -> 8
+      GasChannelConfig -> 0
       SingleChannel -> 1
       ChannelPair -> 2
       SinglePair -> 3
@@ -51,6 +51,7 @@ aacEncoderNew AacMp4StreamConfig{..} =
   [C.block| uintptr_t {
     AACENC_ERROR e;
     HANDLE_AACENCODER phAacEncoder;
+    AACENC_InfoStruct pInfo;
 
     e = aacEncOpen(&phAacEncoder, $(unsigned int modules), $(unsigned int channels));
     if (e != AACENC_OK) goto e0;
@@ -91,7 +92,7 @@ aacEncoderNew AacMp4StreamConfig{..} =
       goto e1;
     }
 
-    e = aacEncoder_SetParam(phAacEncoder, AACENC_AFTERBURNER, 1);
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_AFTERBURNER, 0);
     if (e != AACENC_OK) {
       printf("Failed to set encoder parameter 'AACENC_AFTERBURNER'.\n");
       goto e1;
@@ -102,6 +103,16 @@ aacEncoderNew AacMp4StreamConfig{..} =
       printf("Failed to apply the configured encoder parameters.\n");
       goto e1;
     }
+
+    e = aacEncInfo(phAacEncoder, &pInfo);
+    if (e != AACENC_OK) {
+      printf("Failed to read the encoder info.\n");
+      goto e1;
+    }
+
+    for (int i = 0; i < pInfo.confSize; ++i)
+       printf ("ASC %8.0x\n", pInfo.confBuf[i]);
+
 
     printf("Initialized aac encoder:\n • encoder modules: %d\n • encoder channels: %d\n • audio object type: %d\n • sample rate: %d\n • bit rate: %d\n • sbr mode: %d\n • signalling mode: %d\n • channel mode: %d\n",
           $(unsigned int modules),
