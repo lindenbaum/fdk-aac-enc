@@ -22,7 +22,7 @@ aacEncoderNew :: AacMp4StreamConfig -> IO (Maybe AacEncoderHandle)
 aacEncoderNew AacMp4StreamConfig{..} =
   let
     modules, channels, aot, sampleRate', bitRate, sbrMode, signallingMode, channelMode :: CUInt
-    !modules = if useHeAac then 3 else 1 -- TODO parametric stereo
+    !modules = 0x17
     !channels = case channelConfig of
       GasChannelConfig -> 0
       SingleChannel -> 1
@@ -34,8 +34,8 @@ aacEncoderNew AacMp4StreamConfig{..} =
       SinglePairPairPairLfe -> 8
     !aot            = if useHeAac then 5 else 2
     !sampleRate'    = sampleRateToNumber sampleRate
-    !bitRate        = round (fromIntegral sampleRate'
-                             * ((if useHeAac then 0.625 else 1.5) :: Double))
+    -- !bitRate        = channelMode * round (fromIntegral sampleRate' * ((if useHeAac then 0.625 else 1.5) :: Double)) --
+    !bitRate        = if useHeAac then 64000 else 320002
     !sbrMode        = fromIntegral (fromEnum useHeAac)
     !signallingMode = if useHeAac then 2 else 0
     !channelMode    = case channelConfig of
@@ -52,7 +52,16 @@ aacEncoderNew AacMp4StreamConfig{..} =
     AACENC_ERROR e;
     HANDLE_AACENCODER phAacEncoder;
     AACENC_InfoStruct pInfo;
+    CHANNEL_MODE channelMode;
 
+    switch ($(unsigned int channelMode)) {
+        case 1: channelMode = MODE_1;       break;
+        case 2: channelMode = MODE_2;       break;
+        case 3: channelMode = MODE_1_2;     break;
+        case 4: channelMode = MODE_1_2_1;   break;
+        case 5: channelMode = MODE_1_2_2;   break;
+        case 6: channelMode = MODE_1_2_2_1; break;
+    }
     e = aacEncOpen(&phAacEncoder, $(unsigned int modules), $(unsigned int channels));
     if (e != AACENC_OK) goto e0;
 
@@ -80,19 +89,31 @@ aacEncoderNew AacMp4StreamConfig{..} =
       goto e1;
     }
 
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_BANDWIDTH, 0);
+    if (e != AACENC_OK) {
+      printf("Failed to set encoder parameter 'AACENC_AACENC_BANDWIDTH'.\n");
+      goto e1;
+    }
+
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_BITRATEMODE, 0);
+    if (e != AACENC_OK) {
+      printf("Failed to set encoder parameter 'AACENC_AACENC_BANDWIDTH'.\n");
+      goto e1;
+    }
+
     e = aacEncoder_SetParam(phAacEncoder, AACENC_SBR_MODE, (const UINT) $(unsigned int sbrMode));
     if (e != AACENC_OK) {
       printf("Failed to set encoder parameter 'AACENC_SBR_MODE'.\n");
       goto e1;
     }
 
-    e = aacEncoder_SetParam(phAacEncoder, AACENC_CHANNELMODE, (const UINT) $(unsigned int channelMode));
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_CHANNELMODE, channelMode);
     if (e != AACENC_OK) {
       printf("Failed to set encoder parameter 'AACENC_CHANNELMODE'.\n");
       goto e1;
     }
 
-    e = aacEncoder_SetParam(phAacEncoder, AACENC_AFTERBURNER, 0);
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_AFTERBURNER, 1);
     if (e != AACENC_OK) {
       printf("Failed to set encoder parameter 'AACENC_AFTERBURNER'.\n");
       goto e1;
@@ -110,10 +131,6 @@ aacEncoderNew AacMp4StreamConfig{..} =
       goto e1;
     }
 
-    for (int i = 0; i < pInfo.confSize; ++i)
-       printf ("ASC %8.0x\n", pInfo.confBuf[i]);
-
-
     printf("Initialized aac encoder:\n • encoder modules: %d\n • encoder channels: %d\n • audio object type: %d\n • sample rate: %d\n • bit rate: %d\n • sbr mode: %d\n • signalling mode: %d\n • channel mode: %d\n",
           $(unsigned int modules),
           $(unsigned int channels),
@@ -123,6 +140,10 @@ aacEncoderNew AacMp4StreamConfig{..} =
           $(unsigned int sbrMode),
           $(unsigned int signallingMode),
           $(unsigned int channelMode));
+    for (int i = 0; i < pInfo.confSize; ++i)
+       printf (" • ASC[%d] %8.0x\n", i,  pInfo.confBuf[i]);
+
+    printf (" • delay %d\n", pInfo.encoderDelay);
 
     return ((uintptr_t) phAacEncoder);
 
@@ -140,10 +161,12 @@ aacEncoderNew AacMp4StreamConfig{..} =
 -- | Encode mutable IO vectors.
 aacEncoderEncode
   :: AacEncoderHandle
+  -> Int
   -> VM.IOVector C.CShort
   -> VM.IOVector C.CUChar
   -> IO (Bool, Word32, Maybe (VM.IOVector C.CShort), Maybe (VM.IOVector C.CUChar))
-aacEncoderEncode (MkAacEncoderHandle !h) !vec !bso = do
+aacEncoderEncode (MkAacEncoderHandle !h) !channelCount !vec !bso = do
+  let channelCountI = fromIntegral channelCount
   ((numOutBytes, numInSamples, numAncBytes), retCode)
      <- C.withPtrs $
        \ (numOutBytesP, numInSamplesP, numAncBytesP) ->
@@ -154,7 +177,7 @@ aacEncoderEncode (MkAacEncoderHandle !h) !vec !bso = do
             /* Input buffer */
             AACENC_BufDesc inBuffDesc;
             INT inBuffIds[1]             = {IN_AUDIO_DATA};
-            INT inBuffSizes[1]           = {$vec-len:vec * 2};
+            INT inBuffSizes[1]           = {$vec-len:vec * 2 * $(unsigned int channelCountI)};
             INT inBuffElSizes[1]         = {2};
             void* inBuffBuffers[1]       = {$vec-ptr:(short *vec)};
             inBuffDesc.numBufs           = 1;
@@ -204,7 +227,7 @@ aacEncoderEncode (MkAacEncoderHandle !h) !vec !bso = do
       !mRetOutBuf   = if (numOutBytesI == 0)
                       then Nothing
                       else Just  (VM.slice 0 numOutBytesI bso)
-  return (retCode == 0, fromIntegral numInSamplesI, mRetInBuf, mRetOutBuf)
+  return (retCode == 0, fromIntegral numInSamplesI `div` fromIntegral channelCount, mRetInBuf, mRetOutBuf)
 
 -- TODO FLUSH!!!!!!!!!!!!!!!!!!!!!!
 

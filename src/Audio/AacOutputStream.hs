@@ -44,7 +44,7 @@ streamOpen sId availabilityStartTime segmentDuration =
       fmap (initSegment, st, ) <$> aacEncoderNew (Mp4.getStreamConfig st)
 
     createContext (initSegment, st, h) = do
-      o <- liftIO $ VM.new 768
+      o <- liftIO $ VM.new (2 * 768) -- TODO
       return (initSegment, Context h o st sId segmentDuration 0)
 
 streamOpen16kMono
@@ -106,7 +106,7 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
     go :: Context -> VM.IOVector C.CShort -> m (Maybe Context)
     go !ctx@Context{..} !inVec =
       do (!ok, !cons, !inVec', !outVec')
-            <- liftIO $ aacEncoderEncode faHandle inVec faOutVec
+            <- liftIO $ aacEncoderEncode faHandle (Mp4.numberOfChannels faStream) inVec faOutVec
          if not ok
            then do liftIO $ printf "\n\n\n*** Encoder error in stream: %16X\n\n\n"
                             (unStreamId faId)
