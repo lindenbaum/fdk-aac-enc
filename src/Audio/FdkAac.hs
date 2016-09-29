@@ -35,9 +35,9 @@ aacEncoderNew AacMp4StreamConfig{..} =
     !aot            = if useHeAac then 5 else 2
     !sampleRate'    = sampleRateToNumber sampleRate
     -- !bitRate        = channelMode * round (fromIntegral sampleRate' * ((if useHeAac then 0.625 else 1.5) :: Double)) --
-    !bitRate        = if useHeAac then 64000 else 320002
+    !bitRate        = if useHeAac then 64000 else 139636
     !sbrMode        = fromIntegral (fromEnum useHeAac)
-    !signallingMode = if useHeAac then 2 else 0
+    !signallingMode = 2 -- TODO if useHeAac then 2 else 0
     !channelMode    = case channelConfig of
       GasChannelConfig -> 0
       SingleChannel -> 1
@@ -71,9 +71,9 @@ aacEncoderNew AacMp4StreamConfig{..} =
       goto e1;
     }
 
-    e = aacEncoder_SetParam(phAacEncoder, AACENC_BITRATE, (const UINT) $(unsigned int bitRate));
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_SBR_MODE, (const UINT) $(unsigned int sbrMode));
     if (e != AACENC_OK) {
-      printf("Failed to set encoder parameter 'AACENC_BITRATE'.\n");
+      printf("Failed to set encoder parameter 'AACENC_SBR_MODE'.\n");
       goto e1;
     }
 
@@ -83,39 +83,51 @@ aacEncoderNew AacMp4StreamConfig{..} =
       goto e1;
     }
 
-    e = aacEncoder_SetParam(phAacEncoder, AACENC_SIGNALING_MODE, (const UINT) $(unsigned int signallingMode));
-    if (e != AACENC_OK) {
-      printf("Failed to set encoder parameter 'AACENC_SIGNALING_MODE'.\n");
-      goto e1;
-    }
-
-    e = aacEncoder_SetParam(phAacEncoder, AACENC_BANDWIDTH, 0);
-    if (e != AACENC_OK) {
-      printf("Failed to set encoder parameter 'AACENC_AACENC_BANDWIDTH'.\n");
-      goto e1;
-    }
-
-    e = aacEncoder_SetParam(phAacEncoder, AACENC_BITRATEMODE, 0);
-    if (e != AACENC_OK) {
-      printf("Failed to set encoder parameter 'AACENC_AACENC_BANDWIDTH'.\n");
-      goto e1;
-    }
-
-    e = aacEncoder_SetParam(phAacEncoder, AACENC_SBR_MODE, (const UINT) $(unsigned int sbrMode));
-    if (e != AACENC_OK) {
-      printf("Failed to set encoder parameter 'AACENC_SBR_MODE'.\n");
-      goto e1;
-    }
-
     e = aacEncoder_SetParam(phAacEncoder, AACENC_CHANNELMODE, channelMode);
     if (e != AACENC_OK) {
       printf("Failed to set encoder parameter 'AACENC_CHANNELMODE'.\n");
       goto e1;
     }
 
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_CHANNELORDER, 1);
+    if (e != AACENC_OK) {
+      printf("Failed to set encoder parameter 'AACENC_CHANNELORDER''.\n");
+      goto e1;
+    }
+
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_BITRATEMODE, 0);
+    if (e != AACENC_OK) {
+      printf("Failed to set encoder parameter 'AACENC_BITRATEMODE'.\n");
+      goto e1;
+    }
+
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_BITRATE, (const UINT) $(unsigned int bitRate));
+    if (e != AACENC_OK) {
+      printf("Failed to set encoder parameter 'AACENC_BITRATE'.\n");
+      goto e1;
+    }
+
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_TRANSMUX, TT_MP4_RAW);
+    if (e != AACENC_OK) {
+      printf("Failed to set encoder parameter 'AACENC_TRANSMUX'.\n");
+      goto e1;
+    }
+
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_SIGNALING_MODE, (const UINT) $(unsigned int signallingMode));
+    if (e != AACENC_OK) {
+      printf("Failed to set encoder parameter 'AACENC_SIGNALING_MODE'.\n");
+      goto e1;
+    }
+
     e = aacEncoder_SetParam(phAacEncoder, AACENC_AFTERBURNER, 1);
     if (e != AACENC_OK) {
       printf("Failed to set encoder parameter 'AACENC_AFTERBURNER'.\n");
+      goto e1;
+    }
+
+    e = aacEncoder_SetParam(phAacEncoder, AACENC_BANDWIDTH, 16000);
+    if (e != AACENC_OK) {
+      printf("Failed to set encoder parameter 'AACENC_AACENC_BANDWIDTH'.\n");
       goto e1;
     }
 
@@ -177,7 +189,7 @@ aacEncoderEncode (MkAacEncoderHandle !h) !channelCount !vec !bso = do
             /* Input buffer */
             AACENC_BufDesc inBuffDesc;
             INT inBuffIds[1]             = {IN_AUDIO_DATA};
-            INT inBuffSizes[1]           = {$vec-len:vec * 2 * $(unsigned int channelCountI)};
+            INT inBuffSizes[1]           = {$vec-len:vec * 2};
             INT inBuffElSizes[1]         = {2};
             void* inBuffBuffers[1]       = {$vec-ptr:(short *vec)};
             inBuffDesc.numBufs           = 1;
@@ -185,7 +197,9 @@ aacEncoderEncode (MkAacEncoderHandle !h) !channelCount !vec !bso = do
             inBuffDesc.bufferIdentifiers = &inBuffIds;
             inBuffDesc.bufSizes          = &inBuffSizes;
             inBuffDesc.bufElSizes        = &inBuffElSizes;
-            AACENC_InArgs inArgs         = { .numInSamples = $vec-len:vec, .numAncBytes = 0 };
+            AACENC_InArgs inArgs         =
+              { .numInSamples = $vec-len:vec
+              , .numAncBytes = 0 };
 
             /* Ouput buffer */
             AACENC_BufDesc outBuffDesc;
