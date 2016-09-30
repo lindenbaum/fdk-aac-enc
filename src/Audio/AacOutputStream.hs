@@ -15,7 +15,7 @@ import           Data.ByteString.Mp4.AudioStreaming as X (Segment(..), InitSegme
 import           Audio.FdkAac
 import qualified Language.C.Inline            as C
 import qualified Data.Vector.Storable         as V
-import qualified Data.Vector.Storable.Mutable as VM
+-- import qualified Data.Vector.Storable.Mutable as VM
 import Data.Coerce
 import Data.Word
 import Data.Maybe (isJust)
@@ -43,9 +43,8 @@ streamOpen sId availabilityStartTime segmentDuration =
             Mp4.ChannelPair
       fmap (initSegment, st, ) <$> aacEncoderNew (Mp4.getStreamConfig st)
 
-    createContext (initSegment, st, h) = do
-      o <- liftIO $ VM.new (2 * 768) -- TODO
-      return (initSegment, Context h o st sId segmentDuration 0)
+    createContext (initSegment, st, h) =
+       return (initSegment, Context h st sId segmentDuration 0)
 
 streamOpen16kMono
   :: MonadIO m
@@ -64,9 +63,8 @@ streamOpen16kMono sId availabilityStartTime segmentDuration =
             Mp4.SingleChannel
       fmap (initSegment, st, ) <$> aacEncoderNew (Mp4.getStreamConfig st)
 
-    createContext (initSegment, st, h) = do
-      o <- liftIO $ VM.new 768
-      return (initSegment, Context h o st sId segmentDuration 0)
+    createContext (initSegment, st, h) =
+      return (initSegment, Context h st sId segmentDuration 0)
 
 
 streamClose
@@ -101,12 +99,12 @@ streamEncodePcm
   -> Context
   -> m (Maybe Context)
 streamEncodePcm !inVecFrozen !callback !ctxIn =
-  liftIO (V.thaw (coerce inVecFrozen)) >>= go ctxIn
+  go ctxIn (coerce inVecFrozen)
   where
-    go :: Context -> VM.IOVector C.CShort -> m (Maybe Context)
+    go :: Context -> V.Vector C.CShort -> m (Maybe Context)
     go !ctx@Context{..} !inVec =
-      do (!ok, !cons, !inVec', !outVec')
-            <- liftIO $ aacEncoderEncode faHandle (Mp4.numberOfChannels faStream) inVec faOutVec
+      do (!ok, !cons, !inVecRest, !outVec)
+            <- liftIO $ aacEncoderEncode faHandle inVec
          if not ok
            then do liftIO $ printf "\n\n\n*** Encoder error in stream: %16X\n\n\n"
                             (unStreamId faId)
@@ -114,28 +112,22 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
                    return Nothing
            else do
              let !totalConsumed = faConsumedButUnencodedSampleCount + cons
+                 !totalEncoded  = maybe 0 (const totalConsumed) outVec
              nextFaStream <-
-               case outVec' of
+               case outVec of
                  Nothing ->
                    return faStream
                  Just vo -> do
-                   vo' <- liftIO $ V.freeze vo
-                   let !voBS = vectorToByteString vo'
-                       (!msegment, !faStream') = Mp4.streamNextSample totalConsumed
+                   let !voBS = vectorToByteString vo
+                       (!msegment, !faStream') = Mp4.streamNextSample totalEncoded
                                                                       voBS
                                                                       faStream
                    mapM_ callback msegment
                    return faStream'
              let !nextCtx = ctx { faStream = nextFaStream
-                                , faConsumedButUnencodedSampleCount =
-                                  if isJust outVec'
-                                     then 0
-                                     else totalConsumed}
-             case inVec' of
-               Nothing -> do -- Input consumed, done here
-                 return (Just nextCtx)
-               Just !inVecRest -> do  -- Still input
-                 go nextCtx inVecRest
+                                , faConsumedButUnencodedSampleCount = totalConsumed - totalEncoded
+                                }
+             maybe (return (Just nextCtx)) (go nextCtx) inVecRest
 
 newtype StreamId = StreamId {unStreamId :: Word32}
   deriving (Integral,Num,Eq,Ord,Enum,Real)
@@ -146,7 +138,6 @@ instance Show StreamId where
 data Context =
   Context
     { faHandle                          :: !AacEncoderHandle
-    , faOutVec                          :: !(VM.IOVector C.CUChar)
     , faStream                          :: !Mp4.StreamingContext
     , faId                              :: !StreamId
     , faSegmentDuration                 :: !NominalDiffTime

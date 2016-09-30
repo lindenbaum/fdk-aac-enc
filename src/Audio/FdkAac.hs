@@ -168,17 +168,17 @@ aacEncoderNew AacMp4StreamConfig{..} =
                     $(unsigned int sbrMode),
                     $(unsigned int signallingMode),
                     $(unsigned int channelMode));
-              for (int i = 0; i < pInfo.confSize, i < *($(int confBufMaxLen)); ++i) {
+              for (int i = 0; i < pInfo.confSize && i < $(int confBufMaxLen); ++i) {
                  printf (" • ASC[%d] %8.0x\n", i,  pInfo.confBuf[i]);
-                 *($(unsigned char* confBufP) + i) = pInfoConfBuf[i];
+                 *($(unsigned char* confBufP) + i) = pInfo.confBuf[i];
               }
               *($(unsigned int* confBufSizeP)) = pInfo.confSize;
 
               printf (" • delay %d\n", pInfo.encoderDelay);
               *($(unsigned int* encDelayP))  = pInfo.encoderDelay;
 
-              printf (" • frame size %d\n", pInfo.encoderFrameSize);
-              *($(unsigned int* frameSizeP))  = pInfo.encoderFrameSize;
+              printf (" • samples per channel in each frame %d\n", pInfo.frameLength);
+              *($(unsigned int* frameSizeP))  = pInfo.frameLength;
 
 
               return ((uintptr_t) phAacEncoder);
@@ -248,8 +248,7 @@ aacEncoderEncode MkAacEncoderHandle{encoderHandle, unsafeOutBuffer, channelCount
             AACENC_OutArgs outArgs;
 
             e = aacEncEncode (phAacEncoder, &inBuffDesc, &outBuffDesc,
-                              &inArgs, &outArgs);
-
+                              &inArgs, &outArgs);                             
             *($(int* numOutBytesP)) = outArgs.numOutBytes;
             *($(int* numInSamplesP)) = outArgs.numInSamples;
             *($(int* numAncBytesP)) = outArgs.numAncBytes;
