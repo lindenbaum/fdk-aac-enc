@@ -43,8 +43,7 @@ aacEncoderNew AacMp4StreamConfig{..} =
               SinglePairPairPairLfe -> 8
             !aot            = if useHeAac then 5 else 2
             !sampleRate'    = sampleRateToNumber sampleRate
-            -- !bitRate        = channelMode * round (fromIntegral sampleRate' * ((if useHeAac then 0.625 else 1.5) :: Double)) --
-            !bitRate        = if useHeAac then 64000 else 320002
+            !bitRate        = channelMode * round (fromIntegral sampleRate' * ((if useHeAac then 0.625 else 1.5) :: Double)) --
             !sbrMode        = fromIntegral (fromEnum useHeAac)
             !signallingMode = if useHeAac then 2 else 0
             !channelMode    = case channelConfig of
@@ -105,12 +104,6 @@ aacEncoderNew AacMp4StreamConfig{..} =
                 goto e1;
               }
 
-              e = aacEncoder_SetParam(phAacEncoder, AACENC_CHANNELORDER, 1);
-              if (e != AACENC_OK) {
-                printf("Failed to set encoder parameter 'AACENC_CHANNELORDER''.\n");
-                goto e1;
-              }
-
               e = aacEncoder_SetParam(phAacEncoder, AACENC_BITRATEMODE, 0);
               if (e != AACENC_OK) {
                 printf("Failed to set encoder parameter 'AACENC_BITRATEMODE'.\n");
@@ -120,6 +113,12 @@ aacEncoderNew AacMp4StreamConfig{..} =
               e = aacEncoder_SetParam(phAacEncoder, AACENC_BITRATE, (const UINT) $(unsigned int bitRate));
               if (e != AACENC_OK) {
                 printf("Failed to set encoder parameter 'AACENC_BITRATE'.\n");
+                goto e1;
+              }
+
+              e = aacEncoder_SetParam(phAacEncoder, AACENC_BANDWIDTH, 8000); /* TODO remote hardcoded value */
+              if (e != AACENC_OK) {
+                printf("Failed to set encoder parameter 'AACENC_BANDWIDTH'.\n");
                 goto e1;
               }
 
@@ -138,12 +137,6 @@ aacEncoderNew AacMp4StreamConfig{..} =
               e = aacEncoder_SetParam(phAacEncoder, AACENC_AFTERBURNER, 1);
               if (e != AACENC_OK) {
                 printf("Failed to set encoder parameter 'AACENC_AFTERBURNER'.\n");
-                goto e1;
-              }
-
-              e = aacEncoder_SetParam(phAacEncoder, AACENC_BANDWIDTH, 16000);
-              if (e != AACENC_OK) {
-                printf("Failed to set encoder parameter 'AACENC_AACENC_BANDWIDTH'.\n");
                 goto e1;
               }
 
@@ -248,7 +241,7 @@ aacEncoderEncode MkAacEncoderHandle{encoderHandle, unsafeOutBuffer, channelCount
             AACENC_OutArgs outArgs;
 
             e = aacEncEncode (phAacEncoder, &inBuffDesc, &outBuffDesc,
-                              &inArgs, &outArgs);                             
+                              &inArgs, &outArgs);
             *($(int* numOutBytesP)) = outArgs.numOutBytes;
             *($(int* numInSamplesP)) = outArgs.numInSamples;
             *($(int* numAncBytesP)) = outArgs.numAncBytes;

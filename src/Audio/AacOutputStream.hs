@@ -28,8 +28,8 @@ import           Data.Time.Clock               (UTCTime)
 
 streamOpen
   :: MonadIO m
-  => StreamId -> UTCTime -> NominalDiffTime -> m (Maybe (InitSegment, Context))
-streamOpen sId availabilityStartTime segmentDuration =
+  => StreamId -> UTCTime -> UTCTime -> NominalDiffTime -> m (Maybe (InitSegment, Context))
+streamOpen sId availabilityStartTime referenceTime segmentDuration =
     liftIO lowLevelInit >>= mapM createContext
   where
     lowLevelInit = do
@@ -37,6 +37,7 @@ streamOpen sId availabilityStartTime segmentDuration =
             Mp4.streamInitUtc
             (printf "TalkFlow:%0.16X" (unStreamId sId))
             availabilityStartTime
+            referenceTime
             segmentDuration
             False
             Mp4.SF48000
@@ -48,8 +49,8 @@ streamOpen sId availabilityStartTime segmentDuration =
 
 streamOpen16kMono
   :: MonadIO m
-  => StreamId -> UTCTime -> NominalDiffTime -> m (Maybe (InitSegment, Context))
-streamOpen16kMono sId availabilityStartTime segmentDuration =
+  => StreamId -> UTCTime -> UTCTime -> NominalDiffTime -> m (Maybe (InitSegment, Context))
+streamOpen16kMono sId availabilityStartTime referenceTime segmentDuration =
     liftIO lowLevelInit >>= mapM createContext
   where
     lowLevelInit = do
@@ -57,6 +58,7 @@ streamOpen16kMono sId availabilityStartTime segmentDuration =
             Mp4.streamInitUtc
             (printf "TalkFlow:%0.16X" (unStreamId sId))
             availabilityStartTime
+            referenceTime
             segmentDuration
             False
             Mp4.SF16000
