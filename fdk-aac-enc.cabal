@@ -2,12 +2,12 @@ name:                fdk-aac-enc
 version:             0.1.0.0
 synopsis:            Wrapper around the Frauenhofer ISO-14496-3 AAC Encoder
 description:         Please see README.md
-homepage:            https://github.com/sheyll/fdk-aac-enc#readme
+homepage:            https://github.com/lindenbaum/fdk-aac-enc#readme
 license:             BSD3
 license-file:        LICENSE
-author:              Sven Heyll, Lindenbaum GmbH
+author:              Sven Heyll
 maintainer:          sven.heyll@lindenbaum.eu
-copyright:           2016 Lindenbaum GmbH
+copyright:           2016 Sven Heyll, Lindenbaum GmbH
 category:            Sound
 build-type:          Simple
 cabal-version:       >=1.10
