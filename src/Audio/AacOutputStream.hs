@@ -18,13 +18,14 @@ import qualified Data.Vector.Storable         as V
 -- import qualified Data.Vector.Storable.Mutable as VM
 import Data.Coerce
 import Data.Word
-import Data.Maybe (isJust)
+-- import Data.Maybe (isJust)
 import Data.Int
 import Data.Time.Clock
 import Control.Monad.IO.Class
 import Data.Vector.Storable.ByteString
 import Text.Printf
 import           Data.Time.Clock               (UTCTime)
+import System.Random(Random)
 
 streamOpen
   :: MonadIO m
@@ -132,7 +133,7 @@ streamEncodePcm !inVecFrozen !callback !ctxIn =
              maybe (return (Just nextCtx)) (go nextCtx) inVecRest
 
 newtype StreamId = StreamId {unStreamId :: Word32}
-  deriving (Integral,Num,Eq,Ord,Enum,Real)
+  deriving (Integral,Num,Eq,Ord,Enum,Real,Random)
 
 instance Show StreamId where
   show (StreamId s) = printf "stream: %0.8X" s
