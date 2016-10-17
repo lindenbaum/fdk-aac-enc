@@ -152,7 +152,7 @@ aacEncoderNew AacMp4StreamConfig{..} =
                 goto e1;
               }
 
-              printf("Initialized aac encoder:\n • encoder modules: %d\n • encoder channels: %d\n • audio object type: %d\n • sample rate: %d\n • bit rate: %d\n • sbr mode: %d\n • signalling mode: %d\n • channel mode: %d\n",
+              printf("Initialized aac encoder:\n * encoder modules: %d\n * encoder channels: %d\n * audio object type: %d\n * sample rate: %d\n * bit rate: %d\n * sbr mode: %d\n * signalling mode: %d\n * channel mode: %d\n",
                     $(unsigned int modules),
                     $(unsigned int channels),
                     $(unsigned int aot),
@@ -162,15 +162,15 @@ aacEncoderNew AacMp4StreamConfig{..} =
                     $(unsigned int signallingMode),
                     $(unsigned int channelMode));
               for (int i = 0; i < pInfo.confSize && i < $(int confBufMaxLen); ++i) {
-                 printf (" • ASC[%d] %8.0x\n", i,  pInfo.confBuf[i]);
+                 printf (" * ASC[%d] %8.0x\n", i,  pInfo.confBuf[i]);
                  *($(unsigned char* confBufP) + i) = pInfo.confBuf[i];
               }
               *($(unsigned int* confBufSizeP)) = pInfo.confSize;
 
-              printf (" • delay %d\n", pInfo.encoderDelay);
+              printf (" * delay %d\n", pInfo.encoderDelay);
               *($(unsigned int* encDelayP))  = pInfo.encoderDelay;
 
-              printf (" • samples per channel in each frame %d\n", pInfo.frameLength);
+              printf (" * samples per channel in each frame %d\n", pInfo.frameLength);
               *($(unsigned int* frameSizeP))  = pInfo.frameLength;
 
 
