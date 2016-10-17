@@ -219,10 +219,10 @@ aacEncoderEncode MkAacEncoderHandle{encoderHandle, unsafeOutBuffer, channelCount
             INT inBuffElSizes[1]         = {2};
             void* inBuffBuffers[1]       = {$vec-ptr:(short *vec)};
             inBuffDesc.numBufs           = 1;
-            inBuffDesc.bufs              = &inBuffBuffers;
-            inBuffDesc.bufferIdentifiers = &inBuffIds;
-            inBuffDesc.bufSizes          = &inBuffSizes;
-            inBuffDesc.bufElSizes        = &inBuffElSizes;
+            inBuffDesc.bufs              = inBuffBuffers;
+            inBuffDesc.bufferIdentifiers = inBuffIds;
+            inBuffDesc.bufSizes          = inBuffSizes;
+            inBuffDesc.bufElSizes        = inBuffElSizes;
             AACENC_InArgs inArgs         =
               { .numInSamples = $vec-len:vec
               , .numAncBytes = 0 };
@@ -234,10 +234,10 @@ aacEncoderEncode MkAacEncoderHandle{encoderHandle, unsafeOutBuffer, channelCount
             INT outBuffElSizes[1]         = {1};
             void* outBuffBuffers[1]       = {$vec-ptr:(unsigned char *unsafeOutBuffer)};
             outBuffDesc.numBufs           = 1;
-            outBuffDesc.bufs              = &outBuffBuffers;
-            outBuffDesc.bufferIdentifiers = &outBuffIds;
-            outBuffDesc.bufSizes          = &outBuffSizes;
-            outBuffDesc.bufElSizes        = &outBuffElSizes;
+            outBuffDesc.bufs              = outBuffBuffers;
+            outBuffDesc.bufferIdentifiers = outBuffIds;
+            outBuffDesc.bufSizes          = outBuffSizes;
+            outBuffDesc.bufElSizes        = outBuffElSizes;
             AACENC_OutArgs outArgs;
 
             e = aacEncEncode (phAacEncoder, &inBuffDesc, &outBuffDesc,
@@ -277,7 +277,6 @@ aacEncoderEncode MkAacEncoderHandle{encoderHandle, unsafeOutBuffer, channelCount
 aacEncoderClose :: AacEncoderHandle -> IO ()
 aacEncoderClose MkAacEncoderHandle{encoderHandle} = do
    res <- [C.block| int {
-             AACENC_ERROR e;
              HANDLE_AACENCODER phAacEncoder = (HANDLE_AACENCODER) $(uintptr_t encoderHandle);
              return aacEncClose(&phAacEncoder);
           } |]
