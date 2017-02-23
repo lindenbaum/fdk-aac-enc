@@ -1,5 +1,5 @@
 name:                fdk-aac-enc
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            Wrapper around the Frauenhofer ISO-14496-3 AAC Encoder
 description:         Please see README.md
 homepage:            https://github.com/lindenbaum/fdk-aac-enc#readme
@@ -50,15 +50,15 @@ library
                      , TypeSynonymInstances
                      , UnicodeSyntax
   build-depends:       base >= 4.9 && < 5
-                     , bytestring >= 0.10.8 && < 0.11
-                     , containers >= 0.5 && < 0.6
-                     , inline-c >= 0.5.5 && < 0.5.6
+                     , bytestring
+                     , containers
+                     , inline-c
                      , isobmff-builder >= 0.11.0.0 && < 0.12
-                     , random >= 1.1 && < 2
-                     , spool >= 0.1 && < 0.2
+                     , random
+                     , spool
                      , time
-                     , text >= 1.2.2.1 && < 2
-                     , vector >= 0.11 && < 0.12
+                     , text
+                     , vector
   c-sources:           src/Audio/FdkAac.c
   -- These flags will be passed to the C compiler
   cc-options:          -std=c99 -Wall -O2
