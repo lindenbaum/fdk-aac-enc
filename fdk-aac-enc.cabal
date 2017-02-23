@@ -1,5 +1,5 @@
 name:                fdk-aac-enc
-version:             0.2.0.0
+version:             0.3.0.0
 synopsis:            Wrapper around the Frauenhofer ISO-14496-3 AAC Encoder
 description:         Please see README.md
 homepage:            https://github.com/lindenbaum/fdk-aac-enc#readme
