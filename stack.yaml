@@ -2,11 +2,12 @@ resolver: lts-8.2
 
 packages:
 - '.'
-- '../isobmff-builder'
+# - '../isobmff-builder' ## uncomment for local development
 
 extra-deps:
 - pretty-types-0.2.3.1
 - type-spec-0.3.0.1
+- isobmff-builder-0.11.3.0   ## comment for local development
 
 flags: {}
 
